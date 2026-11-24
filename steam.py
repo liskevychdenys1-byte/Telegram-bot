@@ -1,141 +1,149 @@
 
-"""Модуль для отримання знижок на ігри Steam."""
+"""Отримання актуальних цін Steam для України."""
 
 import requests
 
-
-API_URL = "https://www.cheapshark.com/api/1.0/deals"
-
+BASE_URL = "https://store.steampowered.com"
 HEADERS = {
-    "User-Agent": "GameDealRadar/1.0"
+    "User-Agent": "Mozilla/5.0 GameDealRadar/1.0"
 }
 
 
 def get_steam_deals(min_discount=0, limit=10):
-    """Отримує список актуальних знижок Steam."""
+    """Отримує акційні ігри з українського Steam."""
 
-    if not isinstance(min_discount, (int, float)) or not 0 <= min_discount <= 100:
-        raise ValueError("Знижка повинна бути від 0 до 100%")
+    if not 0 <= min_discount <= 100:
+        raise ValueError("Знижка повинна бути від 0 до 100")
 
-    if not isinstance(limit, int) or not 1 <= limit <= 60:
+    if not 1 <= limit <= 60:
         raise ValueError("Кількість ігор повинна бути від 1 до 60")
 
+    url = f"{BASE_URL}/api/featuredcategories/"
+
     params = {
-        "storeID": 1,
-        "onSale": 1,
-        "pageSize": 60,
-        "sortBy": "Savings",
-        "desc": 1
+        "cc": "ua",
+        "l": "ukrainian"
     }
 
     try:
         response = requests.get(
-            API_URL,
+            url,
             params=params,
             headers=HEADERS,
-            timeout=15
+            timeout=20
         )
-
         response.raise_for_status()
-        games = response.json()
 
-        result = []
+        data = response.json()
+        specials = data.get("specials", {})
+        items = specials.get("items", [])
 
-        for game in games:
-            discount = float(game.get("savings", 0))
-            old_price = float(game.get("normalPrice", 0))
-            new_price = float(game.get("salePrice", 0))
+        games = []
+
+        for game in items:
+            discount = int(game.get("discount_percent", 0))
 
             if discount < min_discount:
                 continue
 
-            if old_price <= 0 or new_price < 0:
+            old_price = game.get("original_price")
+            new_price = game.get("final_price")
+
+            if old_price is None or new_price is None:
                 continue
 
-            result.append({
-                "title": game.get("title", "Невідома гра"),
-                "old_price": old_price,
-                "new_price": new_price,
-                "discount": round(discount),
+            games.append({
+                "title": game.get("name", "Невідома гра"),
+                "old_price": round(old_price / 100, 2),
+                "new_price": round(new_price / 100, 2),
+                "discount": discount,
                 "currency": "UAH",
-                "store": "Steam",
                 "url": (
-                    "https://www.cheapshark.com/redirect?dealID="
-                    + game.get("dealID", "")
+                    f"https://store.steampowered.com/app/"
+                    f"{game.get('id')}/"
                 )
             })
 
-            if len(result) >= limit:
-                break
-
-        return result
+        return games[:limit]
 
     except requests.RequestException as error:
-        raise RuntimeError(
-            f"Не вдалося отримати знижки Steam: {error}"
-        ) from error
+        print(f"Помилка Steam API: {error}")
+        return []
 
-    except (ValueError, TypeError, AttributeError) as error:
-        raise RuntimeError(
-            f"Помилка обробки даних Steam: {error}"
-        ) from error
+    except (ValueError, TypeError, KeyError) as error:
+        print(f"Помилка обробки цін Steam: {error}")
+        return []
 
 
-def search_steam_game(title):
-    """Шукає гру Steam за назвою."""
+def search_steam_game(query):
+    """Шукає гру та отримує її українську ціну."""
 
-    if not isinstance(title, str) or not title.strip():
-        raise ValueError("Введи назву гри для пошуку")
-
-    params = {
-        "storeID": 1,
-        "onSale": 1,
-        "title": title.strip(),
-        "pageSize": 20
-    }
+    if not query or not query.strip():
+        return []
 
     try:
         response = requests.get(
-            API_URL,
-            params=params,
+            f"{BASE_URL}/api/storesearch/",
+            params={
+                "term": query.strip(),
+                "cc": "ua",
+                "l": "ukrainian"
+            },
             headers=HEADERS,
-            timeout=15
+            timeout=20
         )
-
         response.raise_for_status()
-        games = response.json()
 
-        result = []
+        items = response.json().get("items", [])
+        results = []
 
-        for game in games:
-            old_price = float(game.get("normalPrice", 0))
-            new_price = float(game.get("salePrice", 0))
-            discount = float(game.get("savings", 0))
+        for item in items[:10]:
+            app_id = item.get("id")
 
-            if old_price <= 0:
+            if not app_id:
                 continue
 
-            result.append({
-                "title": game.get("title", "Невідома гра"),
-                "old_price": old_price,
-                "new_price": new_price,
-                "discount": round(discount),
+            details_response = requests.get(
+                f"{BASE_URL}/api/appdetails",
+                params={
+                    "appids": app_id,
+                    "cc": "ua",
+                    "l": "ukrainian"
+                },
+                headers=HEADERS,
+                timeout=20
+            )
+            details_response.raise_for_status()
+
+            details = details_response.json()
+            app_data = details.get(str(app_id), {})
+
+            if not app_data.get("success"):
+                continue
+
+            game = app_data.get("data", {})
+            price = game.get("price_overview")
+
+            if price:
+                old_price = price["initial"] / 100
+                new_price = price["final"] / 100
+                discount = price["discount_percent"]
+            else:
+                old_price = 0
+                new_price = 0
+                discount = 0
+
+            results.append({
+                "title": game.get("name", item.get("name")),
+                "old_price": round(old_price, 2),
+                "new_price": round(new_price, 2),
+                "discount": discount,
                 "currency": "UAH",
-                "store": "Steam",
-                "url": (
-                    "https://www.cheapshark.com/redirect?dealID="
-                    + game.get("dealID", "")
-                )
+                "url": f"https://store.steampowered.com/app/{app_id}/"
             })
 
-        return result
+        return results
 
-    except requests.RequestException as error:
-        raise RuntimeError(
-            f"Помилка пошуку гри: {error}"
-        ) from error
-
-    except (ValueError, TypeError, AttributeError) as error:
-        raise RuntimeError(
-            f"Не вдалося обробити результати пошуку: {error}"
-        ) from error
+    except (requests.RequestException, ValueError, KeyError) as error:
+        print(f"Помилка пошуку Steam: {error}")
+        return []

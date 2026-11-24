@@ -1,22 +1,22 @@
 
-"""Логіка повідомлень Game Deal Radar."""
+"""Допоміжні функції Game Deal Radar."""
 
 
 def start_text(name):
-    name = (name or "друже").strip() or "друже"
+    name = (name or "друже").strip()
 
     return (
-        f"Привіт, {name}! \n\n"
-        f"Я Game Deal Radar!\n"
-        f"Допоможу знаходити найкращі знижки "
-        f"на ігри Steam та Epic Games.\n\n"
-        f"Обирай потрібний розділ у меню нижче!"
+        f"Привіт, {name}! 🎮\n\n"
+        "Я Game Deal Radar!\n"
+        "Допоможу знаходити найкращі знижки "
+        "на ігри Steam та Epic Games.\n\n"
+        "Обирай потрібний розділ у меню!"
     )
 
 
 def help_text():
     return (
-        " GAME DEAL RADAR — команди:\n\n"
+        "🎮 GAME DEAL RADAR — допомога\n\n"
         "/start — головне меню\n"
         "/help — допомога\n"
         "/deals — усі знижки\n"
@@ -25,75 +25,41 @@ def help_text():
         "/free — безкоштовні ігри Epic\n"
         "/search — пошук гри\n"
         "/top — ТОП-10 знижок\n"
-        "/random — випадкова гра зі знижкою"
+        "/random — випадкова гра"
     )
 
 
 def format_price(price, currency="UAH"):
     """Форматує ціну."""
 
-    if price is None:
-        return "Невідома"
-
-
-
-
     symbols = {
+        "UAH": "₴",
         "USD": "$",
         "EUR": "€",
-        "UAH": "₴",
-        "GBP": "£"
+        "PLN": "zł"
     }
 
     symbol = symbols.get(currency, currency)
 
-    return f"{price:.2f} {symbol}"
+    return f"{float(price):.2f} {symbol}"
 
 
-def format_game(game):
-    """Формує повідомлення про гру."""
+def search_games(games, query):
+    """Шукає ігри за назвою."""
 
-    title = game.get("title", "Невідома гра")
-    store = game.get("store", "Невідомий магазин")
-    discount = game.get("discount", 0)
-    currency = game.get("currency", "UAH")
+    query = query.strip().lower()
 
-    if game.get("status") == "free_now":
-        return (
-            f" <b>{title}</b>\n\n"
-            f"Безкоштовно зараз!\n"
-            f" Ціна: 0 ₴\n"
-            f" Знижка: 100%\n"
-            f" Магазин: {store}\n\n"
+    if not query:
+        return []
 
-        )
-
-    if game.get("status") == "upcoming":
-        return (
-            f" <b>{title}</b>\n\n"
-            "Скоро буде безкоштовно!\n"
-            f" Магазин: {store}\n\n"
-            f'<a href="{game["url"]}">Відкрити магазин</a>'
-        )
-
-    old_price = format_price(game.get("old_price"), currency )
-    new_price = format_price(game.get("new_price"), currency )
-
-    saving = game.get("old_price", 0) - game.get("new_price", 0)
-
-    return (
-        f" <b>{title}</b>\n\n"
-        f" Знижка: -{discount}%\n"
-        f" Стара ціна: {old_price}\n"
-        f" Нова ціна: {new_price}\n"
-        f" Економія: {format_price(saving, currency)}\n"
-        f" Магазин: {store}\n\n"
-
-    )
+    return [
+        game for game in games
+        if query in game["title"].lower()
+    ]
 
 
 def top_games(games, limit=10):
-    """Повертає ігри з найбільшими знижками."""
+    """Сортує ігри за розміром знижки."""
 
     return sorted(
         games,
@@ -102,22 +68,18 @@ def top_games(games, limit=10):
     )[:limit]
 
 
-def search_games(games, query):
-    """Шукає гру за частиною назви."""
+def format_game(game):
+    """Формує повідомлення про одну гру."""
 
-    if not isinstance(query, str) or not query.strip():
-        raise ValueError("Введи назву гри")
+    old_price = game.get("old_price", 0)
+    new_price = game.get("new_price", 0)
+    currency = game.get("currency", "UAH")
 
-    query = query.casefold().strip()
-
-    return [
-        game for game in games
-        if query in game.get("title", "").casefold()
-    ]
-
-
-def unknown_text():
     return (
-        "Не зрозумів команду \n"
-        "Скористайся кнопками меню або введи /help."
+        f"🎮 {game['title']}\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"💰 Було: {format_price(old_price, currency)}\n"
+        f"🔥 Стало: {format_price(new_price, currency)}\n"
+        f"📉 Знижка: -{game.get('discount', 0)}%\n"
+        f"🔗 {game.get('url', '')}\n"
     )

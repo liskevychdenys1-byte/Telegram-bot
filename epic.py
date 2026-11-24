@@ -1,94 +1,24 @@
 
-"""Знижки та безкоштовні ігри Epic Games."""
+"""Epic Games — роздачі та акційні ігри."""
 
 import requests
 
 BASE_URL = "https://api.egdata.app"
-HEADERS = {"User-Agent": "GameDealRadar/1.0"}
+
+HEADERS = {
+    "User-Agent": "GameDealRadar/1.0"
+}
 
 
-def get_epic_free_games(include_upcoming=True):
-    """Отримує безкоштовні та майбутні роздачі Epic."""
+def get_epic_free_games():
+    """Отримує безкоштовні та майбутні роздачі."""
 
     try:
         response = requests.get(
             f"{BASE_URL}/free-games",
-            params={"country": "UA", "locale": "uk-UA"},
-            headers=HEADERS,
-            timeout=20
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        result = []
-
-        if isinstance(data, dict):
-            current = data.get("currentGames", [])
-            upcoming = data.get("upcomingGames", [])
-        elif isinstance(data, list):
-            current = data
-            upcoming = []
-        else:
-            raise RuntimeError("Невідомий формат відповіді Epic")
-
-        for game in current:
-            result.append({
-                "title": game.get("title", "Невідома гра"),
-                "old_price": None,
-                "new_price": 0,
-                "discount": 100,
-                "currency": "UAH",
-                "store": "Epic Games",
-                "status": "free_now",
-                "status_text": " Безкоштовно зараз!",
-                "url": game.get("url") or (
-                    "https://store.epicgames.com/uk/browse"
-                )
-            })
-
-        if include_upcoming:
-            for game in upcoming:
-                result.append({
-                    "title": game.get("title", "Невідома гра"),
-                    "old_price": None,
-                    "new_price": 0,
-                    "discount": 100,
-                    "currency": "UAH",
-                    "store": "Epic Games",
-                    "status": "upcoming",
-                    "status_text": " Скоро безкоштовно",
-                    "url": game.get("url") or (
-                        "https://store.epicgames.com/uk/browse"
-                    )
-                })
-
-        return result
-
-    except requests.RequestException as error:
-        raise RuntimeError(
-            f"Помилка отримання безкоштовних ігор Epic: {error}"
-        ) from error
-
-    except (ValueError, TypeError, AttributeError) as error:
-        raise RuntimeError(
-            f"Помилка обробки Epic Games: {error}"
-        ) from error
-
-
-def get_epic_deals(limit=10):
-    """Отримує платні ігри Epic зі знижками."""
-
-    if not isinstance(limit, int) or not 1 <= limit <= 50:
-        raise ValueError("Кількість ігор має бути від 1 до 50")
-
-    try:
-        response = requests.get(
-            f"{BASE_URL}/offers",
             params={
                 "country": "UA",
-                "locale": "uk-UA",
-                "page": 1,
-                "limit": 50
+                "locale": "uk-UA"
             },
             headers=HEADERS,
             timeout=20
@@ -97,16 +27,68 @@ def get_epic_deals(limit=10):
         response.raise_for_status()
         data = response.json()
 
-        games = data.get("elements", []) if isinstance(data, dict) else data
+        if not isinstance(data, list):
+            return []
 
-        result = []
+        games = []
 
-        for game in games:
-            price_data = (game.get("price") or {}).get("price") or {}
+        for item in data:
+            giveaway = item.get("giveaway") or {}
 
-            old_price = price_data.get("originalPrice")
-            new_price = price_data.get("discountPrice")
-            currency = price_data.get("currencyCode", "USD")
+            games.append({
+                "title": item.get("title", "Невідома гра"),
+                "start": giveaway.get("startDate", ""),
+                "end": giveaway.get("endDate", ""),
+                "url": (
+                    "https://store.epicgames.com/p/"
+                    + str(item.get("productSlug", ""))
+                    if item.get("productSlug")
+                    else "https://store.epicgames.com/"
+                )
+            })
+
+        return games
+
+    except (requests.RequestException, ValueError, TypeError) as error:
+        print(f"Epic API error: {error}")
+        return []
+
+
+def get_epic_deals(limit=10):
+    """Отримує акційні ігри Epic Games."""
+
+    try:
+        response = requests.get(
+            f"{BASE_URL}/v1/search",
+            params={
+                "country": "UA",
+                "locale": "uk-UA",
+                "offerType": "BASE_GAME",
+                "onSale": "true",
+                "sortBy": "discountPercent",
+                "sortDir": "desc",
+                "limit": limit,
+                "fields": "full"
+            },
+            headers=HEADERS,
+            timeout=20
+        )
+
+        response.raise_for_status()
+        data = response.json()
+
+        offers = data.get("data", [])
+        games = []
+
+        for item in offers:
+            price = item.get("price") or {}
+
+            if not isinstance(price, dict):
+                continue
+
+            # Пропускаємо пропозиції без підтвердженої ціни.
+            old_price = price.get("originalPrice")
+            new_price = price.get("discountPrice")
 
             if old_price is None or new_price is None:
                 continue
@@ -118,42 +100,20 @@ def get_epic_deals(limit=10):
                 continue
 
             discount = round(
-                (old_price - new_price) / old_price * 100
+                (1 - new_price / old_price) * 100
             )
 
-            url = game.get("url")
-
-            if not url:
-                slug = game.get("productSlug") or game.get("urlSlug")
-                url = (
-                    f"https://store.epicgames.com/uk/p/{slug}"
-                    if slug else "https://store.epicgames.com/uk/browse"
-                )
-
-            result.append({
-                "title": game.get("title", "Невідома гра"),
+            games.append({
+                "title": item.get("title", "Невідома гра"),
                 "old_price": old_price,
                 "new_price": new_price,
                 "discount": discount,
-                "currency": currency,
-                "store": "Epic Games",
-                "status": "discount",
-                "url": url
+                "currency": price.get("currencyCode", "UAH"),
+                "url": "https://store.epicgames.com/"
             })
 
-        result.sort(
-            key=lambda game: game["discount"],
-            reverse=True
-        )
+        return games[:limit]
 
-        return result[:limit]
-
-    except requests.RequestException as error:
-        raise RuntimeError(
-            f"Помилка отримання знижок Epic: {error}"
-        ) from error
-
-    except (ValueError, TypeError, AttributeError) as error:
-        raise RuntimeError(
-            f"Помилка обробки цін Epic: {error}"
-        ) from error
+    except (requests.RequestException, ValueError, TypeError) as error:
+        print(f"Epic deals error: {error}")
+        return []

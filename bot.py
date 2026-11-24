@@ -1,104 +1,98 @@
 
-"""Головний Telegram-бот Game Deal Radar."""
+"""Головний файл Game Deal Radar."""
 
 import random
-import html
 import telebot
 from telebot import types
 
-import handlers
+from config import require_token
 from steam import get_steam_deals, search_steam_game
 from epic import get_epic_deals, get_epic_free_games
-from config import require_token
+import handlers
 
 
 bot = telebot.TeleBot(require_token())
 
 
-
-bot.set_my_commands([
-    types.BotCommand("start", "Запустити бота"),
-    types.BotCommand("help", "Допомога"),
-    types.BotCommand("deals", "Усі знижки"),
-    types.BotCommand("steam", "Знижки Steam"),
-    types.BotCommand("epic", "Знижки Epic Games"),
-    types.BotCommand("free", "Безкоштовні ігри"),
-    types.BotCommand("search", "Пошук гри"),
-    types.BotCommand("top", "ТОП-10 знижок"),
-    types.BotCommand("random", "Випадкова гра")
-])
-
-
-
+# Головне меню
 def main_keyboard():
     keyboard = types.ReplyKeyboardMarkup(
         resize_keyboard=True,
         row_width=2
     )
 
-    keyboard.add("Усі знижки", "Steam")
-    keyboard.add("Epic Games", "Безкоштовні ігри")
-    keyboard.add("Пошук гри", "ТОП-10")
-    keyboard.add("Випадкова гра", "Допомога")
+    keyboard.add(
+        "🔥 Усі знижки",
+        "🎮 Steam"
+    )
+
+    keyboard.add(
+        "🕹 Epic Games",
+        "🎁 Безкоштовні ігри"
+    )
+
+    keyboard.add(
+        "🔎 Пошук гри",
+        "🏆 ТОП-10"
+    )
+
+    keyboard.add(
+        "🎲 Випадкова гра",
+        "❓ Допомога"
+    )
 
     return keyboard
 
 
-
-def get_all_deals():
-    games = []
-
-    try:
-        games.extend(get_steam_deals(limit=10))
-    except Exception as error:
-        print(f"Помилка Steam: {error}")
-
-    try:
-        games.extend(get_epic_deals(limit=10))
-    except Exception as error:
-        print(f"Помилка Epic Games: {error}")
-
-    return games
-
-
-
+# Надсилання ігор
 def send_games(chat_id, games, title):
     if not games:
         bot.send_message(
             chat_id,
-            "Ігор не знайдено або магазини тимчасово недоступні."
+            "😔 Ігор не знайдено або сервіс тимчасово недоступний."
         )
         return
 
     bot.send_message(chat_id, title)
 
     for game in games:
-        try:
-            text = handlers.format_game(game)
-
-            bot.send_message(
-                chat_id,
-                text,
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-
-        except Exception as error:
-            print(f"Помилка відправлення гри: {error}")
-
-            bot.send_message(
-                chat_id,
-                "Не вдалося показати цю гру."
-            )
+        bot.send_message(
+            chat_id,
+            handlers.format_game(game),
+            disable_web_page_preview=True
+        )
 
 
+# Безкоштовні ігри Epic
+def send_free_games(chat_id):
+    games = get_epic_free_games()
 
+    if not games:
+        bot.send_message(
+            chat_id,
+            "😔 Не вдалося отримати безкоштовні ігри Epic."
+        )
+        return
+
+    for game in games:
+        text = (
+            f"🎁 {game['title']}\n\n"
+            f"📅 Початок: {game.get('start') or 'Не вказано'}\n"
+            f"⏰ Завершення: {game.get('end') or 'Не вказано'}\n"
+            f"🔗 {game['url']}"
+        )
+
+        bot.send_message(
+            chat_id,
+            text,
+            disable_web_page_preview=True
+        )
+
+
+# /start
 @bot.message_handler(commands=["start"])
-def on_start(message):
-    name = (
-        message.from_user.first_name
-        if message.from_user else "користувач"
-    )
+def start(message):
+    name = message.from_user.first_name or "друже"
 
     bot.send_message(
         message.chat.id,
@@ -107,9 +101,9 @@ def on_start(message):
     )
 
 
-
+# /help
 @bot.message_handler(commands=["help"])
-def on_help(message):
+def help_command(message):
     bot.send_message(
         message.chat.id,
         handlers.help_text(),
@@ -117,297 +111,179 @@ def on_help(message):
     )
 
 
-
-@bot.message_handler(commands=["deals"])
-def on_deals(message):
-    bot.send_message(
-        message.chat.id,
-        "Шукаю актуальні знижки..."
-    )
-
-    games = get_all_deals()
-
-    send_games(
-        message.chat.id,
-        games,
-        "Актуальні знижки Steam та Epic Games:"
-    )
-
-
-
+# /steam
 @bot.message_handler(commands=["steam"])
-def on_steam(message):
-    bot.send_message(
-        message.chat.id,
-        "Шукаю знижки Steam..."
-    )
-
-    try:
-        games = get_steam_deals(limit=10)
-
-        send_games(
-            message.chat.id,
-            games,
-            "Знижки Steam:"
-        )
-
-    except Exception as error:
-        print(error)
-
-        bot.send_message(
-            message.chat.id,
-            "Не вдалося отримати знижки Steam."
-        )
-
-
-
-@bot.message_handler(commands=["epic"])
-def on_epic(message):
-    bot.send_message(
-        message.chat.id,
-        "Шукаю пропозиції Epic Games..."
-    )
-
-    games = []
-
-    try:
-        games.extend(get_epic_deals(limit=10))
-    except Exception as error:
-        print(f"Epic deals: {error}")
-
-    try:
-        games.extend(get_epic_free_games())
-    except Exception as error:
-        print(f"Epic free games: {error}")
+def steam_command(message):
+    games = get_steam_deals(limit=20)
 
     send_games(
         message.chat.id,
         games,
-        "Пропозиції Epic Games:"
+        "🎮 ЗНИЖКИ STEAM"
     )
 
 
+# /epic
+@bot.message_handler(commands=["epic"])
+def epic_command(message):
+    games = get_epic_deals(limit=20)
 
+    send_games(
+        message.chat.id,
+        games,
+        "🕹 ЗНИЖКИ EPIC GAMES"
+    )
+
+
+# /free
 @bot.message_handler(commands=["free"])
-def on_free(message):
-    bot.send_message(
+def free_command(message):
+    send_free_games(message.chat.id)
+
+
+# /deals
+@bot.message_handler(commands=["deals"])
+def deals_command(message):
+    steam_games = get_steam_deals(limit=20)
+    epic_games = get_epic_deals(limit=20)
+
+    games = steam_games + epic_games
+
+    games = handlers.top_games(games, 20)
+
+    send_games(
         message.chat.id,
-        "Шукаю безкоштовні ігри..."
+        games,
+        "🔥 УСІ АКТУАЛЬНІ ЗНИЖКИ"
     )
 
-    try:
-        games = get_epic_free_games()
 
-        send_games(
-            message.chat.id,
-            games,
-            "Безкоштовні ігри Epic Games:"
-        )
-
-    except Exception as error:
-        print(error)
-
-        bot.send_message(
-            message.chat.id,
-            "Не вдалося отримати безкоштовні ігри."
-        )
-
-
-
+# /top
 @bot.message_handler(commands=["top"])
-def on_top(message):
-    bot.send_message(
-        message.chat.id,
-        "Формую ТОП-10 знижок..."
-    )
-
-    games = get_all_deals()
+def top_command(message):
+    steam_games = get_steam_deals(limit=60)
+    epic_games = get_epic_deals(limit=60)
 
     games = handlers.top_games(
-        games,
-        limit=10
+        steam_games + epic_games,
+        10
     )
 
     send_games(
         message.chat.id,
         games,
-        "ТОП-10 найбільших знижок:"
+        "🏆 ТОП-10 НАЙБІЛЬШИХ ЗНИЖОК"
     )
 
 
-
+# /random
 @bot.message_handler(commands=["random"])
-def on_random(message):
-    games = get_all_deals()
+def random_command(message):
+    games = (
+        get_steam_deals(limit=60)
+        + get_epic_deals(limit=60)
+    )
 
     if not games:
         bot.send_message(
             message.chat.id,
-            "Наразі немає доступних пропозицій."
+            "😔 Наразі немає доступних ігор."
         )
         return
 
     game = random.choice(games)
 
-    bot.send_message(
+    send_games(
         message.chat.id,
-        "Випадкова гра:"
-    )
-
-    bot.send_message(
-        message.chat.id,
-        handlers.format_game(game),
-        parse_mode="HTML",
-        disable_web_page_preview=True
+        [game],
+        "🎲 ВИПАДКОВА ГРА"
     )
 
 
+# /search
+@bot.message_handler(commands=["search"])
+def search_command(message):
+    bot.send_message(
+        message.chat.id,
+        "🔎 Напиши назву гри, яку потрібно знайти:"
+    )
 
-def perform_search(message, query):
-    query = query.strip()
+    bot.register_next_step_handler(
+        message,
+        process_search
+    )
+
+
+def process_search(message):
+    query = message.text.strip() if message.text else ""
 
     if not query:
         bot.send_message(
             message.chat.id,
-            "Введи назву гри."
+            "❌ Введи текстову назву гри."
         )
         return
 
     bot.send_message(
         message.chat.id,
-        f"Шукаю гру: {html.escape(query)}..."
+        "🔍 Шукаю гру, зачекай..."
     )
 
-    games = []
-
-    try:
-        games.extend(search_steam_game(query))
-    except Exception as error:
-        print(f"Steam search: {error}")
-
-    try:
-        epic_games = get_epic_deals(limit=50)
-
-        games.extend(
-            handlers.search_games(epic_games, query)
-        )
-    except Exception as error:
-        print(f"Epic search: {error}")
-
-    try:
-        free_games = get_epic_free_games()
-
-        games.extend(
-            handlers.search_games(free_games, query)
-        )
-    except Exception as error:
-        print(f"Epic free search: {error}")
+    games = search_steam_game(query)
 
     if not games:
         bot.send_message(
             message.chat.id,
-            f"Гру «{html.escape(query)}» не знайдено."
+            f"😔 Гру «{query}» не знайдено."
         )
         return
 
     send_games(
         message.chat.id,
-        games[:10],
-        f"Результати пошуку: {html.escape(query)}"
+        games,
+        f"🔎 РЕЗУЛЬТАТИ ПОШУКУ: {query}"
     )
 
 
+# Обробка кнопок меню
+@bot.message_handler(func=lambda message: True)
+def menu_handler(message):
+    text = message.text
 
-@bot.message_handler(commands=["search"])
-def on_search(message):
-    parts = message.text.split(maxsplit=1)
+    if text == "🎮 Steam":
+        steam_command(message)
 
-    if len(parts) > 1:
-        perform_search(message, parts[1])
-    else:
-        msg = bot.send_message(
-            message.chat.id,
-            "Введи назву гри:"
-        )
+    elif text == "🕹 Epic Games":
+        epic_command(message)
 
-        bot.register_next_step_handler(
-            msg,
-            search_step
-        )
+    elif text == "🎁 Безкоштовні ігри":
+        free_command(message)
 
+    elif text == "🔥 Усі знижки":
+        deals_command(message)
 
+    elif text == "🏆 ТОП-10":
+        top_command(message)
 
-def search_step(message):
-    if not message.text:
-        bot.send_message(
-            message.chat.id,
-            "Введи назву гри текстом."
-        )
-        return
+    elif text == "🎲 Випадкова гра":
+        random_command(message)
 
-    if message.text.startswith("/"):
-        bot.send_message(
-            message.chat.id,
-            "Пошук скасовано."
-        )
-        return
+    elif text == "🔎 Пошук гри":
+        search_command(message)
 
-    perform_search(message, message.text)
-
-
-
-@bot.message_handler(
-    func=lambda message: (
-        message.text is not None
-        and not message.text.startswith("/")
-    )
-)
-def on_text(message):
-    text = message.text.strip()
-
-    if text == "Усі знижки":
-        on_deals(message)
-
-    elif text == "Steam":
-        on_steam(message)
-
-    elif text == "Epic Games":
-        on_epic(message)
-
-    elif text == "Безкоштовні ігри":
-        on_free(message)
-
-    elif text == "Пошук гри":
-        msg = bot.send_message(
-            message.chat.id,
-            "Введи назву гри:"
-        )
-
-        bot.register_next_step_handler(
-            msg,
-            search_step
-        )
-
-    elif text == "ТОП-10":
-        on_top(message)
-
-    elif text == "Випадкова гра":
-        on_random(message)
-
-    elif text == "Допомога":
-        on_help(message)
+    elif text == "❓ Допомога":
+        help_command(message)
 
     else:
         bot.send_message(
             message.chat.id,
-            handlers.unknown_text(),
-            reply_markup=main_keyboard()
+            "Не розумію команду. Скористайся меню або /help."
         )
 
 
-
+# Запуск бота
 if __name__ == "__main__":
-    print("Game Deal Radar запущено!")
+    print("🎮 Game Deal Radar запущено!")
 
     bot.infinity_polling(
         skip_pending=True,
