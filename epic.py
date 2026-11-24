@@ -1,33 +1,63 @@
+import os
+from dotenv import load_dotenv
 
-"""Epic Games — роздачі та акційні ігри."""
+load_dotenv()
+
+API_KEY = os.getenv("EGDATA_API_KEY")
+"""Epic Games — Game Deal Radar."""
 
 import requests
 
 BASE_URL = "https://api.egdata.app"
 
 HEADERS = {
-    "User-Agent": "GameDealRadar/1.0"
+    "User-Agent": "GameDealRadar/2.1",
+    "Accept": "application/json"
 }
 
 
+
+def api_request(endpoint, params=None):
+    """Виконує авторизований запит до EGData."""
+
+    headers = {
+        "User-Agent": "GameDealRadar/2.1",
+        "Accept": "application/json"
+    }
+
+    if endpoint.startswith("/v1/"):
+        if not API_KEY:
+            raise ValueError(
+                "Не знайдено EGDATA_API_KEY у файлі .env"
+            )
+
+        headers["X-API-Key"] = API_KEY
+
+    response = requests.get(
+        BASE_URL + endpoint,
+        params=params,
+        headers=headers,
+        timeout=25
+    )
+
+    response.raise_for_status()
+    return response.json()
+
+
 def get_epic_free_games():
-    """Отримує безкоштовні та майбутні роздачі."""
+    """Отримує безкоштовні роздачі Epic Games."""
 
     try:
-        response = requests.get(
-            f"{BASE_URL}/free-games",
-            params={
+        data = api_request(
+            "/free-games",
+            {
                 "country": "UA",
                 "locale": "uk-UA"
-            },
-            headers=HEADERS,
-            timeout=20
+            }
         )
 
-        response.raise_for_status()
-        data = response.json()
-
         if not isinstance(data, list):
+            print("Epic: API повернув не список роздач.")
             return []
 
         games = []
@@ -35,32 +65,110 @@ def get_epic_free_games():
         for item in data:
             giveaway = item.get("giveaway") or {}
 
+            if not giveaway:
+                continue
+
+            whitelist = item.get("countriesWhitelist") or []
+            blacklist = item.get("countriesBlacklist") or []
+
+            if whitelist and "UA" not in whitelist:
+                continue
+
+            if "UA" in blacklist:
+                continue
+
+            slug = item.get("productSlug")
+
             games.append({
                 "title": item.get("title", "Невідома гра"),
                 "start": giveaway.get("startDate", ""),
                 "end": giveaway.get("endDate", ""),
                 "url": (
-                    "https://store.epicgames.com/p/"
-                    + str(item.get("productSlug", ""))
-                    if item.get("productSlug")
-                    else "https://store.epicgames.com/"
+                    f"https://store.epicgames.com/p/{slug}"
+                    if slug else "https://store.epicgames.com/"
                 )
             })
 
+        print(f"Epic: знайдено роздач: {len(games)}")
         return games
 
-    except (requests.RequestException, ValueError, TypeError) as error:
-        print(f"Epic API error: {error}")
+    except requests.RequestException as error:
+        print(f"Epic Free Games HTTP error: {error}")
+        return []
+
+    except (ValueError, TypeError, KeyError) as error:
+        print(f"Epic Free Games parsing error: {error}")
         return []
 
 
-def get_epic_deals(limit=10):
-    """Отримує акційні ігри Epic Games."""
+def extract_price(item):
+    """Отримує цінові дані з різних варіантів відповіді API."""
+
+    price = item.get("price")
+
+    if not isinstance(price, dict):
+        return None
+
+    current = price.get("currentPrice")
+
+    if isinstance(current, dict):
+        price = current.get("price") or price
+
+    if not isinstance(price, dict):
+        return None
+
+    currency = price.get("currencyCode")
+
+    old_price = (
+        price.get("originalPrice")
+        or price.get("basePrice")
+        or price.get("original")
+    )
+
+    new_price = (
+        price.get("discountPrice")
+        if price.get("discountPrice") is not None
+        else price.get("finalPrice")
+    )
+
+    discount = price.get("discount")
+
+    if old_price is None or new_price is None:
+        return None
+
+    old_price = float(old_price)
+    new_price = float(new_price)
+
+    if old_price <= 0 or new_price >= old_price:
+        return None
+
+    if not currency:
+        return None
+
+    # API повертає суми в найменших одиницях валюти.
+    old_price /= 100
+    new_price /= 100
+
+    if discount is None:
+        discount = round(
+            (1 - new_price / old_price) * 100
+        )
+
+    return {
+        "old_price": round(old_price, 2),
+        "new_price": round(new_price, 2),
+        "discount": int(discount),
+        "currency": currency
+    }
+
+
+def get_epic_deals(limit=20):
+    """Отримує ігри Epic Games зі знижками."""
 
     try:
-        response = requests.get(
-            f"{BASE_URL}/v1/search",
-            params={
+        data = api_request(
+            "/v1/search",
+            {
                 "country": "UA",
                 "locale": "uk-UA",
                 "offerType": "BASE_GAME",
@@ -69,51 +177,49 @@ def get_epic_deals(limit=10):
                 "sortDir": "desc",
                 "limit": limit,
                 "fields": "full"
-            },
-            headers=HEADERS,
-            timeout=20
+            }
         )
 
-        response.raise_for_status()
-        data = response.json()
+        if not isinstance(data, dict):
+            print("Epic: неправильний формат каталогу.")
+            return []
 
-        offers = data.get("data", [])
+        items = data.get("data", [])
+
+        if not isinstance(items, list):
+            print("Epic: поле data не є списком.")
+            return []
+
         games = []
 
-        for item in offers:
-            price = item.get("price") or {}
+        for item in items:
+            prices = extract_price(item)
 
-            if not isinstance(price, dict):
+            if not prices:
                 continue
 
-            # Пропускаємо пропозиції без підтвердженої ціни.
-            old_price = price.get("originalPrice")
-            new_price = price.get("discountPrice")
-
-            if old_price is None or new_price is None:
-                continue
-
-            old_price = float(old_price)
-            new_price = float(new_price)
-
-            if old_price <= 0 or new_price >= old_price:
-                continue
-
-            discount = round(
-                (1 - new_price / old_price) * 100
-            )
+            slug = item.get("productSlug")
 
             games.append({
                 "title": item.get("title", "Невідома гра"),
-                "old_price": old_price,
-                "new_price": new_price,
-                "discount": discount,
-                "currency": price.get("currencyCode", "UAH"),
-                "url": "https://store.epicgames.com/"
+                **prices,
+                "url": (
+                    f"https://store.epicgames.com/p/{slug}"
+                    if slug else "https://store.epicgames.com/"
+                )
             })
 
-        return games[:limit]
+        print(
+            f"Epic: отримано {len(items)} пропозицій, "
+            f"знайдено {len(games)} ігор зі знижками."
+        )
 
-    except (requests.RequestException, ValueError, TypeError) as error:
-        print(f"Epic deals error: {error}")
+        return games
+
+    except requests.RequestException as error:
+        print(f"Epic Deals HTTP error: {error}")
+        return []
+
+    except (ValueError, TypeError, KeyError) as error:
+        print(f"Epic Deals parsing error: {error}")
         return []
