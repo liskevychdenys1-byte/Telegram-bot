@@ -1,5 +1,28 @@
 
 """Головний файл Game Deal Radar."""
+import pytest
+import sys
+
+
+def run_tests():
+    print("\n===== ЗАПУСК 15 ТЕСТІВ =====\n")
+
+    result = pytest.main([
+        "-v",
+        "--tb=short",
+        "test.py"
+    ])
+
+    if result != 0:
+        print("\nТЕСТИ НЕ ПРОЙШЛИ! БОТ НЕ ЗАПУЩЕНО.")
+        sys.exit(1)
+
+    print("\n===== УСІ 15 ТЕСТІВ ПРОЙШЛИ! =====\n")
+
+
+if __name__ == "__main__":
+    run_tests()
+
 
 import random
 import telebot
@@ -14,7 +37,7 @@ import handlers
 bot = telebot.TeleBot(require_token())
 
 
-# Головне меню
+
 def main_keyboard():
     keyboard = types.ReplyKeyboardMarkup(
         resize_keyboard=True,
@@ -44,7 +67,7 @@ def main_keyboard():
     return keyboard
 
 
-# Надсилання ігор
+
 def send_games(chat_id, games, title):
     if not games:
         bot.send_message(
@@ -63,7 +86,7 @@ def send_games(chat_id, games, title):
         )
 
 
-# Безкоштовні ігри Epic
+
 def send_free_games(chat_id):
     games = get_epic_free_games()
 
@@ -89,7 +112,7 @@ def send_free_games(chat_id):
         )
 
 
-# /start
+
 @bot.message_handler(commands=["start"])
 def start(message):
     name = message.from_user.first_name or "друже"
@@ -101,7 +124,7 @@ def start(message):
     )
 
 
-# /help
+
 @bot.message_handler(commands=["help"])
 def help_command(message):
     bot.send_message(
@@ -111,7 +134,7 @@ def help_command(message):
     )
 
 
-# /steam
+
 @bot.message_handler(commands=["steam"])
 def steam_command(message):
     games = get_steam_deals(limit=20)
@@ -123,7 +146,7 @@ def steam_command(message):
     )
 
 
-# /epic
+
 @bot.message_handler(commands=["epic"])
 def epic_command(message):
     games = get_epic_deals(limit=20)
@@ -135,13 +158,13 @@ def epic_command(message):
     )
 
 
-# /free
+
 @bot.message_handler(commands=["free"])
 def free_command(message):
     send_free_games(message.chat.id)
 
 
-# /deals
+
 @bot.message_handler(commands=["deals"])
 def deals_command(message):
     steam_games = get_steam_deals(limit=20)
@@ -158,7 +181,7 @@ def deals_command(message):
     )
 
 
-# /top
+
 @bot.message_handler(commands=["top"])
 def top_command(message):
     steam_games = get_steam_deals(limit=60)
@@ -176,7 +199,7 @@ def top_command(message):
     )
 
 
-# /random
+
 @bot.message_handler(commands=["random"])
 def random_command(message):
     games = (
@@ -200,7 +223,7 @@ def random_command(message):
     )
 
 
-# /search
+
 @bot.message_handler(commands=["search"])
 def search_command(message):
     bot.send_message(
@@ -245,7 +268,7 @@ def process_search(message):
     )
 
 
-# Обробка кнопок меню
+
 @bot.message_handler(func=lambda message: True)
 def menu_handler(message):
     text = message.text
@@ -281,7 +304,7 @@ def menu_handler(message):
         )
 
 
-# Запуск бота
+
 if __name__ == "__main__":
     print("🎮 Game Deal Radar запущено!")
 

@@ -1,14 +1,11 @@
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-API_KEY = os.getenv("EGDATA_API_KEY")
 """Epic Games — Game Deal Radar."""
 
 import requests
 
-BASE_URL = "https://api.egdata.app"
+from config import require_egdata_key
+
+BASE_URL = "https://devs.egdata.app/proxy"
 
 HEADERS = {
     "User-Agent": "GameDealRadar/2.1",
@@ -16,22 +13,11 @@ HEADERS = {
 }
 
 
-
 def api_request(endpoint, params=None):
-    """Виконує авторизований запит до EGData."""
+    """Виконує запит до EGDATA API."""
 
-    headers = {
-        "User-Agent": "GameDealRadar/2.1",
-        "Accept": "application/json"
-    }
-
-    if endpoint.startswith("/v1/"):
-        if not API_KEY:
-            raise ValueError(
-                "Не знайдено EGDATA_API_KEY у файлі .env"
-            )
-
-        headers["X-API-Key"] = API_KEY
+    headers = HEADERS.copy()
+    headers["X-API-Key"] = require_egdata_key()
 
     response = requests.get(
         BASE_URL + endpoint,
@@ -45,7 +31,7 @@ def api_request(endpoint, params=None):
 
 
 def get_epic_free_games():
-    """Отримує безкоштовні роздачі Epic Games."""
+    """Отримує безкоштовні ігри Epic Games."""
 
     try:
         data = api_request(
@@ -57,7 +43,7 @@ def get_epic_free_games():
         )
 
         if not isinstance(data, list):
-            print("Epic: API повернув не список роздач.")
+            print("Epic: неправильний формат роздач.")
             return []
 
         games = []
@@ -85,11 +71,12 @@ def get_epic_free_games():
                 "end": giveaway.get("endDate", ""),
                 "url": (
                     f"https://store.epicgames.com/p/{slug}"
-                    if slug else "https://store.epicgames.com/"
+                    if slug
+                    else "https://store.epicgames.com/"
                 )
             })
 
-        print(f"Epic: знайдено роздач: {len(games)}")
+        print(f"Game: знайдено роздач: {len(games)}")
         return games
 
     except requests.RequestException as error:
@@ -102,7 +89,7 @@ def get_epic_free_games():
 
 
 def extract_price(item):
-    """Отримує цінові дані з різних варіантів відповіді API."""
+    """Отримує цінові дані гри."""
 
     price = item.get("price")
 
@@ -136,8 +123,11 @@ def extract_price(item):
     if old_price is None or new_price is None:
         return None
 
-    old_price = float(old_price)
-    new_price = float(new_price)
+    try:
+        old_price = float(old_price)
+        new_price = float(new_price)
+    except (ValueError, TypeError):
+        return None
 
     if old_price <= 0 or new_price >= old_price:
         return None
@@ -145,7 +135,7 @@ def extract_price(item):
     if not currency:
         return None
 
-    # API повертає суми в найменших одиницях валюти.
+
     old_price /= 100
     new_price /= 100
 
@@ -205,12 +195,13 @@ def get_epic_deals(limit=20):
                 **prices,
                 "url": (
                     f"https://store.epicgames.com/p/{slug}"
-                    if slug else "https://store.epicgames.com/"
+                    if slug
+                    else "https://store.epicgames.com/"
                 )
             })
 
         print(
-            f"Epic: отримано {len(items)} пропозицій, "
+            f"Game: отримано {len(items)} пропозицій, "
             f"знайдено {len(games)} ігор зі знижками."
         )
 
